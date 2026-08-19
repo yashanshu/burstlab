@@ -1,0 +1,8 @@
+[site]
+title    = "BurstLab"
+author   = "Vell"
+language = "en"
+baseurl  = "https://burstlab.aaiko.in"
+
+[theme]
+name = "surly"

@@ -1,0 +1,5 @@
+# Generated from docs/ by publish.sh — never edit, never commit.
+site/posts/
+site/pages/
+site/public/
+site/.homestead/
