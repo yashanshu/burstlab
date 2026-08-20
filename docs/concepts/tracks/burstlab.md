@@ -7,8 +7,8 @@
 | # | Concept | Status | Lesson |
 |---:|---|---|---|
 | 1 | Queue-backed ingestion and the HTTP 202 boundary | passed | docs/concepts/queue-backed-ingestion-202-boundary.md |
-| 2 | At-least-once delivery and idempotent batch writes | active | docs/concepts/at-least-once-delivery-idempotent-batch-writes.md |
-| 3 | Micro-batching, long polling, and consumer throughput arithmetic | queued | — |
+| 2 | At-least-once delivery and idempotent batch writes | passed | docs/concepts/at-least-once-delivery-idempotent-batch-writes.md |
+| 3 | Micro-batching, long polling, and consumer throughput arithmetic | active | docs/concepts/micro-batching-long-polling-consumer-throughput-arithmetic.md |
 | 4 | Trust boundaries and least privilege in the request path | queued | — |
 | 5 | Terraform's plan, state, and destroy model | queued | — |
 | 6 | Private-by-default AWS networking | queued | — |
