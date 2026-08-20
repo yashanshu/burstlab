@@ -3,3 +3,6 @@ site/posts/
 site/pages/
 site/public/
 site/.homestead/
+# The theme is copied in from the concept-speedrun skill on every build.
+site/themes/
+.wrangler/
