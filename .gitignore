@@ -6,3 +6,8 @@ site/.homestead/
 # The theme is copied in from the concept-speedrun skill on every build.
 site/themes/
 .wrangler/
+
+# Single-machine lab runtime artifacts and local secrets.
+labs/burstlab-single-machine/.env
+labs/burstlab-single-machine/burstlab
+labs/burstlab-single-machine/results/
