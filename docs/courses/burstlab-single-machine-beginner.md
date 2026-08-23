@@ -159,9 +159,17 @@ Read `.env`. Keep `HTTP_ADDR`, `URL`, `NATS_URL`, and `DATABASE_URL` on `127.0.0
 
 Use trusted official instructions for [Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/), [Go](https://go.dev/doc/install), [k6](https://grafana.com/docs/k6/latest/set-up/install-k6/), and the [NATS CLI](https://github.com/nats-io/natscli/releases/tag/v0.4.0). Install Go 1.27.0 and k6 2.2.0 for the reference result, or record a deliberate deviation. The module keeps a Go 1.25 language floor; the target should use a supported toolchain. [Go's release history](https://go.dev/doc/devel/release) is the version authority.
 
+`scripts/install-prereqs.sh` installs exactly those versions. Every download is pinned to its published SHA-256 and verified before it is unpacked, so the toolchain cannot quietly drift from the one these results were measured on. It skips anything already at the pinned version, needs `sudo`, and installs Docker Engine through Docker's own installer only when Docker is absent. Installing by hand from the official pages above is equally valid — the versions are what matter, not the method.
+
 **Before:** Installation is permitted, and you know whether Docker commands require local `docker` group membership.
 
 **Do:**
+
+```bash
+bash scripts/install-prereqs.sh
+```
+
+Then verify in a *new login shell*, so that `/etc/profile.d/go.sh` and any new `docker` group membership have taken effect:
 
 ```bash
 go version
@@ -173,7 +181,7 @@ docker compose version
 
 **Expect:** Every command succeeds; the reference versions appear in this document's metadata.
 
-**If different:** A missing command is a prerequisite failure. A later version is not automatically invalid, but it defines a different benchmark.
+**If different:** A missing command is a prerequisite failure. A later version is not automatically invalid, but it defines a different benchmark. A checksum mismatch is neither: stop, do not retry, and re-check which release you are pulling before installing anything.
 
 **Recover or stop:** Install from the official source, restart the shell if group membership changed, and rerun all commands. Do not alias a different load tool as `k6`.
 
