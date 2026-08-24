@@ -56,7 +56,7 @@ if [[ -f $benchmark_manifest ]]; then
           unset "$key"
         fi
         ;;
-      PROFILE | TARGET_RPS | URL | HTTP_ADDR | NATS_URL | POSTGRES_DB | POSTGRES_USER | \
+      PROFILE | TARGET_RPS | URL | HTTP_ADDR | NATS_URL | NATS_SYNC_INTERVAL | POSTGRES_DB | POSTGRES_USER | \
         NATS_IMAGE | POSTGRES_IMAGE | DOCKER_CONTEXT_RESOLVED | BENCHMARK_K6_CONFIG | \
         LAB_SOURCE_FINGERPRINT | COMPOSE_CONFIG_FINGERPRINT | TOKEN_INPUT_SHA256 | \
         API_TOKEN_DIGEST | DATABASE_URL_SHA256 | POSTGRES_PASSWORD_SHA256 | HEALTH_DURATION | \
@@ -134,6 +134,7 @@ trap 'rm -f -- "$tmp_output"' EXIT
 if ! {
   printf 'run_id=%s\nphase=%s\ncaptured_utc=%s\n' "$run_id" "$phase" "$(date -u +%FT%TZ)"
   printf 'profile=%s\ntarget_rps=%s\n' "$PROFILE" "$TARGET_RPS"
+  printf 'nats_sync_interval=%s\n' "${NATS_SYNC_INTERVAL:-always}"
   printf 'allow_stopped_worker=%s\n' "${ALLOW_STOPPED_WORKER:-0}"
   printf 'health_duration=%s\ndiscovery_duration=%s\nconfirmation_low_rps=%s\nlow_duration=%s\nramp_duration=%s\nhold_duration=%s\n' \
     "${HEALTH_DURATION:-30s}" "$DISCOVERY_DURATION" "${CONFIRMATION_LOW_RPS:-unrecorded}" "${LOW_DURATION:-2m}" \

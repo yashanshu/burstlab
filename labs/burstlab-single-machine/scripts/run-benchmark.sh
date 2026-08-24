@@ -33,6 +33,10 @@ if [[ ! $TARGET_RPS =~ ^[1-9][0-9]*$ ]]; then
   printf 'target-rps must be a positive integer\n' >&2
   exit 2
 fi
+if [[ ${NATS_SYNC_INTERVAL:-always} != always && ! ${NATS_SYNC_INTERVAL:-} =~ ^[1-9][0-9]*(ms|s|m|h)$ ]]; then
+  printf 'NATS_SYNC_INTERVAL must be always or a positive duration such as 2m\n' >&2
+  exit 2
+fi
 confirmation_low_rps=$(( TARGET_RPS / 15 ))
 (( confirmation_low_rps < 1 )) && confirmation_low_rps=1
 if [[ -n $cli_duration ]]; then
@@ -98,6 +102,7 @@ if ! {
   printf 'URL=%s\n' "${URL:-http://127.0.0.1:8080}"
   printf 'HTTP_ADDR=%s\n' "${HTTP_ADDR:-127.0.0.1:8080}"
   printf 'NATS_URL=%s\n' "${NATS_URL:-nats://127.0.0.1:4222}"
+  printf 'NATS_SYNC_INTERVAL=%s\n' "${NATS_SYNC_INTERVAL:-always}"
   printf 'POSTGRES_DB=%s\n' "${POSTGRES_DB:-burstlab}"
   printf 'POSTGRES_USER=%s\n' "${POSTGRES_USER:-burstlab}"
   printf 'NATS_IMAGE=%s\n' "${NATS_IMAGE:-nats:2.14.5-alpine3.22}"

@@ -50,5 +50,5 @@ configs:
       jetstream {
         store_dir: /data/jetstream
         # Make PubAck match this lab's literal power-loss durability boundary.
-        sync_interval: always
+        sync_interval: ${NATS_SYNC_INTERVAL:-always}
       }
