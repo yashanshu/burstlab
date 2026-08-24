@@ -113,6 +113,55 @@ func TestEventHandlerRequiresPublishAck(t *testing.T) {
 	}
 }
 
+func TestObservedPublisherClassifiesOutcomes(t *testing.T) {
+	s := &stats{}
+
+	succeed := observedPublisher(s, time.Second, func(context.Context, []byte) error { return nil })
+	if err := succeed(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	canceledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceled := observedPublisher(s, time.Second, func(ctx context.Context, _ []byte) error { return ctx.Err() })
+	if err := canceled(canceledContext, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled publish error = %v", err)
+	}
+
+	deadline := observedPublisher(s, time.Nanosecond, func(ctx context.Context, _ []byte) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	if err := deadline(context.Background(), nil); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deadline publish error = %v", err)
+	}
+
+	otherError := errors.New("publish failed")
+	other := observedPublisher(s, time.Second, func(context.Context, []byte) error { return otherError })
+	if err := other(context.Background(), nil); !errors.Is(err, otherError) {
+		t.Fatalf("other publish error = %v", err)
+	}
+
+	if s.publishSucceeded.Load() != 1 || s.publishCanceled.Load() != 1 ||
+		s.publishDeadline.Load() != 1 || s.publishOtherError.Load() != 1 {
+		t.Fatalf("unexpected publish outcomes: %#v", statsSnapshot(s))
+	}
+	if s.publishInFlight.Load() != 0 || s.publishMaxInFlight.Load() != 1 || s.publishDurationCount.Load() != 4 {
+		t.Fatalf("unexpected publish gauges: %#v", statsSnapshot(s))
+	}
+}
+
+func TestObservePublishDurationUsesCumulativeBuckets(t *testing.T) {
+	s := &stats{}
+	observePublishDuration(s, 150*time.Millisecond)
+	observePublishDuration(s, 151*time.Millisecond)
+
+	if s.publishDurationCount.Load() != 2 || s.publishDurationLE150MS.Load() != 1 ||
+		s.publishDurationLE500MS.Load() != 2 || s.publishDurationMaxUS.Load() != 151_000 {
+		t.Fatalf("unexpected publish duration buckets: %#v", statsSnapshot(s))
+	}
+}
+
 func TestSplitEnvelopes(t *testing.T) {
 	valid := fmt.Sprintf(`{"tenant_id":"%s","request_id":"one","event_ts":"2026-08-21T12:00:00Z","value":"ok"}`, tenantID)
 	messages := []*nats.Msg{

@@ -64,6 +64,23 @@ type stats struct {
 	quarantine atomic.Uint64
 	acked      atomic.Uint64
 	errors     atomic.Uint64
+
+	publishSucceeded        atomic.Uint64
+	publishDeadline         atomic.Uint64
+	publishCanceled         atomic.Uint64
+	publishOtherError       atomic.Uint64
+	publishInFlight         atomic.Int64
+	publishMaxInFlight      atomic.Uint64
+	publishDurationCount    atomic.Uint64
+	publishDurationUSTotal  atomic.Uint64
+	publishDurationMaxUS    atomic.Uint64
+	publishDurationLE10MS   atomic.Uint64
+	publishDurationLE50MS   atomic.Uint64
+	publishDurationLE150MS  atomic.Uint64
+	publishDurationLE500MS  atomic.Uint64
+	publishDurationLE1000MS atomic.Uint64
+	publishDurationLE1500MS atomic.Uint64
+	publishDurationLE2000MS atomic.Uint64
 }
 
 func main() {
@@ -99,12 +116,10 @@ func runAPI(ctx context.Context) error {
 
 	s := &stats{}
 	go logStats(ctx, s)
-	publish := func(ctx context.Context, body []byte) error {
-		publishCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		_, err := js.Publish(eventSubject, body, nats.Context(publishCtx))
+	publish := observedPublisher(s, 2*time.Second, func(ctx context.Context, body []byte) error {
+		_, err := js.Publish(eventSubject, body, nats.Context(ctx))
 		return err
-	}
+	})
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, _ *http.Request) {
@@ -152,6 +167,69 @@ func runAPI(ctx context.Context) error {
 			return err
 		}
 		return nil
+	}
+}
+
+func observedPublisher(s *stats, timeout time.Duration, publish func(context.Context, []byte) error) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
+		started := time.Now()
+		inFlight := uint64(s.publishInFlight.Add(1))
+		updateMax(&s.publishMaxInFlight, inFlight)
+		defer func() {
+			s.publishInFlight.Add(-1)
+			observePublishDuration(s, time.Since(started))
+		}()
+
+		publishCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		err := publish(publishCtx, body)
+		switch {
+		case err == nil:
+			s.publishSucceeded.Add(1)
+		case errors.Is(publishCtx.Err(), context.Canceled) || errors.Is(err, context.Canceled):
+			s.publishCanceled.Add(1)
+		case errors.Is(publishCtx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, nats.ErrTimeout):
+			s.publishDeadline.Add(1)
+		default:
+			s.publishOtherError.Add(1)
+		}
+		return err
+	}
+}
+
+func observePublishDuration(s *stats, duration time.Duration) {
+	microseconds := uint64(duration.Microseconds())
+	s.publishDurationCount.Add(1)
+	s.publishDurationUSTotal.Add(microseconds)
+	updateMax(&s.publishDurationMaxUS, microseconds)
+	if duration <= 10*time.Millisecond {
+		s.publishDurationLE10MS.Add(1)
+	}
+	if duration <= 50*time.Millisecond {
+		s.publishDurationLE50MS.Add(1)
+	}
+	if duration <= 150*time.Millisecond {
+		s.publishDurationLE150MS.Add(1)
+	}
+	if duration <= 500*time.Millisecond {
+		s.publishDurationLE500MS.Add(1)
+	}
+	if duration <= time.Second {
+		s.publishDurationLE1000MS.Add(1)
+	}
+	if duration <= 1500*time.Millisecond {
+		s.publishDurationLE1500MS.Add(1)
+	}
+	if duration <= 2*time.Second {
+		s.publishDurationLE2000MS.Add(1)
+	}
+}
+
+func updateMax(value *atomic.Uint64, candidate uint64) {
+	for current := value.Load(); candidate > current; current = value.Load() {
+		if value.CompareAndSwap(current, candidate) {
+			return
+		}
 	}
 }
 
@@ -581,6 +659,15 @@ func statsSnapshot(s *stats) map[string]uint64 {
 		"accepted": s.accepted.Load(), "rejected": s.rejected.Load(),
 		"committed": s.committed.Load(), "duplicates": s.duplicates.Load(),
 		"quarantine": s.quarantine.Load(), "acked": s.acked.Load(), "errors": s.errors.Load(),
+		"publish_succeeded": s.publishSucceeded.Load(), "publish_deadline": s.publishDeadline.Load(),
+		"publish_canceled": s.publishCanceled.Load(), "publish_other_error": s.publishOtherError.Load(),
+		"publish_in_flight": uint64(s.publishInFlight.Load()), "publish_max_in_flight": s.publishMaxInFlight.Load(),
+		"publish_duration_count":    s.publishDurationCount.Load(),
+		"publish_duration_us_total": s.publishDurationUSTotal.Load(), "publish_duration_max_us": s.publishDurationMaxUS.Load(),
+		"publish_duration_le_10ms": s.publishDurationLE10MS.Load(), "publish_duration_le_50ms": s.publishDurationLE50MS.Load(),
+		"publish_duration_le_150ms": s.publishDurationLE150MS.Load(), "publish_duration_le_500ms": s.publishDurationLE500MS.Load(),
+		"publish_duration_le_1000ms": s.publishDurationLE1000MS.Load(), "publish_duration_le_1500ms": s.publishDurationLE1500MS.Load(),
+		"publish_duration_le_2000ms": s.publishDurationLE2000MS.Load(),
 	}
 }
 
@@ -590,9 +677,11 @@ func logStats(ctx context.Context, s *stats) {
 	for {
 		select {
 		case <-ticker.C:
-			log.Printf("stats accepted=%d rejected=%d committed=%d duplicates=%d quarantine=%d acked=%d errors=%d",
+			log.Printf("stats accepted=%d rejected=%d committed=%d duplicates=%d quarantine=%d acked=%d errors=%d publish_succeeded=%d publish_deadline=%d publish_canceled=%d publish_other_error=%d publish_in_flight=%d publish_max_in_flight=%d publish_duration_max_us=%d",
 				s.accepted.Load(), s.rejected.Load(), s.committed.Load(), s.duplicates.Load(),
-				s.quarantine.Load(), s.acked.Load(), s.errors.Load())
+				s.quarantine.Load(), s.acked.Load(), s.errors.Load(), s.publishSucceeded.Load(),
+				s.publishDeadline.Load(), s.publishCanceled.Load(), s.publishOtherError.Load(),
+				s.publishInFlight.Load(), s.publishMaxInFlight.Load(), s.publishDurationMaxUS.Load())
 		case <-ctx.Done():
 			return
 		}

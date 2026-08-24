@@ -20,6 +20,9 @@ const rampDurationMS = durationMilliseconds('RAMP_DURATION', rampDuration);
 const holdDurationMS = durationMilliseconds('HOLD_DURATION', holdDuration);
 const discoveryDurationMS = durationMilliseconds('DISCOVERY_DURATION', discoveryDuration);
 const acceptedEvents = new Counter('accepted_events');
+const clientTransportErrors = new Counter('client_transport_errors');
+const clientTimeouts = new Counter('client_timeouts');
+const serviceUnavailable = new Counter('service_unavailable');
 
 if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$/.test(runID)) {
   throw new Error('RUN_ID must contain 1-32 letters, digits, underscores, or hyphens');
@@ -75,6 +78,12 @@ export default function () {
       timeout: '2s',
     },
   );
+  const transportError = response.status === 0;
+  const error = String(response.error || '').toLowerCase();
+  const timeout = transportError && (error.includes('timeout') || error.includes('deadline exceeded'));
+  clientTransportErrors.add(transportError ? 1 : 0, { phase });
+  clientTimeouts.add(timeout ? 1 : 0, { phase });
+  serviceUnavailable.add(response.status === 503 ? 1 : 0, { phase });
   if (response.status === 202) {
     acceptedEvents.add(1, { phase });
   }
@@ -164,7 +173,7 @@ function buildThresholds() {
       'http_req_failed{phase:health}': [`rate<${maxFailureRate}`],
       'http_req_duration{phase:health}': [`p(95)<${maxP95MS}`],
       'http_reqs{phase:health}': ['rate>0'],
-      'dropped_iterations{phase:health}': ['count==0'],
+      'dropped_iterations{scenario:health}': ['count==0'],
     };
   }
 
@@ -175,7 +184,7 @@ function buildThresholds() {
     [`http_req_duration{phase:${phase}}`]: [`p(95)<${maxP95MS}`],
     [`http_reqs{phase:${phase}}`]: ['rate>0'],
     [`accepted_events{phase:${phase}}`]: ['count>0'],
-    [profile === 'confirmation' ? 'dropped_iterations{scenario:confirmation}' : `dropped_iterations{phase:${phase}}`]: ['count==0'],
+    [`dropped_iterations{scenario:${profile}}`]: ['count==0'],
   };
 }
 
@@ -234,12 +243,13 @@ function summaryLine(data, path) {
   const measuredPhase = profile === 'confirmation' ? 'hold' : profile;
   const requests = metricValue(data, `http_reqs{phase:${measuredPhase}}`, 'count');
   const observedRate = metricValue(data, `http_reqs{phase:${measuredPhase}}`, 'rate');
-  const droppedMetric = profile === 'confirmation'
-    ? 'dropped_iterations{scenario:confirmation}'
-    : `dropped_iterations{phase:${measuredPhase}}`;
+  const droppedMetric = `dropped_iterations{scenario:${profile}}`;
   const dropped = metricValue(data, droppedMetric, 'count');
   const accepted = metricValue(data, `accepted_events{phase:${measuredPhase}}`, 'count');
   const acceptedTotal = metricValue(data, 'accepted_events', 'count');
+  const transportErrors = metricValue(data, 'client_transport_errors', 'count');
+  const timeouts = metricValue(data, 'client_timeouts', 'count');
+  const unavailable = metricValue(data, 'service_unavailable', 'count');
   const measuredDurationMS = profile === 'confirmation' ? holdDurationMS
     : profile === 'discovery' ? discoveryDurationMS
       : null;
@@ -249,7 +259,7 @@ function summaryLine(data, path) {
   const acceptedRPS = measuredDurationMS !== null && typeof accepted === 'number'
     ? accepted / (measuredDurationMS / 1000)
     : 'n/a';
-  return `run=${runID} profile=${profile} measured_phase=${measuredPhase} requests=${requests} accepted=${accepted} accepted_total=${acceptedTotal} attempted_rps=${attemptedRPS} accepted_rps=${acceptedRPS} dropped=${dropped}\nsummary=${path}\n`;
+  return `run=${runID} profile=${profile} measured_phase=${measuredPhase} requests=${requests} accepted=${accepted} accepted_total=${acceptedTotal} attempted_rps=${attemptedRPS} accepted_rps=${acceptedRPS} dropped=${dropped} client_transport_errors=${transportErrors} client_timeouts=${timeouts} service_unavailable=${unavailable}\nsummary=${path}\n`;
 }
 
 function metricValue(data, metric, field) {

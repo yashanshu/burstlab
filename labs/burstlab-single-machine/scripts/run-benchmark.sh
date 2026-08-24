@@ -199,6 +199,18 @@ if (( ${#dependency_containers[@]} > 0 )); then
   docker stats --format '{{json .}}' "${dependency_containers[@]}" >"results/${RUN_ID}-docker-stats.jsonl" &
   monitor_pids+=("$!")
 fi
+(
+  while true; do
+    captured_utc=$(date -u +%FT%TZ)
+    if api_stats=$(curl -fsS --max-time 2 "${api_url%/}/stats" 2>/dev/null); then
+      printf '{"captured_utc":"%s","stats":%s}\n' "$captured_utc" "$api_stats"
+    else
+      printf '{"captured_utc":"%s","stats":null}\n' "$captured_utc"
+    fi
+    sleep 1
+  done
+) >"results/${RUN_ID}-api-stats.jsonl" &
+monitor_pids+=("$!")
 if [[ $PROFILE != health ]]; then
   (
     while true; do
